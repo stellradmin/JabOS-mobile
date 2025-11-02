@@ -1,0 +1,92 @@
+{
+  "cli": {
+    "version": ">= 16.6.2",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Debug",
+        "image": "latest"
+      },
+      "android": {
+        "buildType": "apk",
+        "image": "latest"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "staging"
+      },
+      "ios": {
+        "buildConfiguration": "Release",
+        "image": "latest"
+      },
+      "android": {
+        "buildType": "apk",
+        "image": "latest"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "ios": {
+        "buildConfiguration": "Release",
+        "image": "latest",
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk",
+        "image": "latest",
+        "resourceClass": "medium"
+      }
+    },
+    "production-store": {
+      "extends": "production",
+      "ios": {
+        "buildConfiguration": "Release",
+        "image": "latest",
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "aab",
+        "image": "latest", 
+        "resourceClass": "medium"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "REPLACE_WITH_YOUR_APPLE_ID",
+        "ascAppId": "REPLACE_WITH_YOUR_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "REPLACE_WITH_YOUR_APPLE_TEAM_ID",
+        "bundleIdentifier": "com.stellr.datingapp"
+      },
+      "android": {
+        "serviceAccountKeyPath": "REPLACE_WITH_PATH_TO_SERVICE_ACCOUNT_KEY",
+        "track": "production"
+      }
+    }
+  },
+  "hooks": {
+    "postPublish": [
+      {
+        "file": "sentry-expo/upload-sourcemaps",
+        "config": {
+          "organization": "REPLACE_WITH_SENTRY_ORG",
+          "project": "REPLACE_WITH_SENTRY_PROJECT"
+        }
+      }
+    ]
+  }
+}

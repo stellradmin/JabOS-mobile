@@ -1,0 +1,405 @@
+# =====================================================================
+# COMPREHENSIVE SEMGREP SECURITY RULES FOR STELLR
+# =====================================================================
+# Advanced static analysis rules for investor audit compliance
+# Zero tolerance security scanning configuration
+
+rules:
+  # =====================================================================
+  # CRITICAL SECRETS DETECTION
+  # =====================================================================
+  
+  - id: stellr-hardcoded-supabase-service-role
+    message: |
+      CRITICAL: Supabase service role key detected in code. Service role keys must NEVER 
+      be used in client-side code as they bypass all security policies.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              const $VAR = "eyJ..."
+          - pattern: |
+              let $VAR = "eyJ..."
+          - pattern: |
+              var $VAR = "eyJ..."
+          - pattern: |
+              $OBJ.serviceRoleKey = "..."
+          - pattern: |
+              serviceRole: "..."
+    pattern-where-python: |
+      import re
+      jwt_pattern = r"eyJ[A-Za-z0-9_\/\+\-]*\.[A-Za-z0-9_\/\+\-]*\.[A-Za-z0-9_\/\+\-]*"
+      re.match(jwt_pattern, "$VAR")
+  
+  - id: stellr-stripe-secret-key-exposure
+    message: |
+      CRITICAL: Stripe secret key (sk_) detected. Secret keys must only be used 
+      server-side and never committed to client code.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-regex: sk_(test|live)_[0-9a-zA-Z]{24,}
+    paths:
+      exclude:
+        - "**/.env.example"
+        - "**/README.md"
+        - "**/SECURITY.md"
+  
+  - id: stellr-webhook-secret-exposure
+    message: |
+      HIGH: Webhook secret detected. These should be stored in environment variables.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-regex: whsec_[0-9a-zA-Z]{32,}
+  
+  # =====================================================================
+  # AUTHENTICATION & SESSION SECURITY
+  # =====================================================================
+  
+  - id: stellr-insecure-token-storage
+    message: |
+      CRITICAL: Sensitive token stored in AsyncStorage. Use SecureStore for all 
+      authentication tokens and sensitive data.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              AsyncStorage.setItem($KEY, $TOKEN)
+          - pattern: |
+              AsyncStorage.multiSet([[$KEY, $TOKEN], ...])
+    pattern-where-python: |
+      sensitive_keywords = ['token', 'password', 'secret', 'key', 'auth', 'jwt', 'session']
+      any(keyword in "$KEY".lower() for keyword in sensitive_keywords)
+  
+  - id: stellr-weak-jwt-validation
+    message: |
+      HIGH: Potentially weak JWT validation. Ensure proper signature verification.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              jwt.decode($TOKEN)
+          - pattern: |
+              jwt.decode($TOKEN, {verify: false})
+          - pattern: |
+              JSON.parse(atob($TOKEN.split('.')[1]))
+  
+  - id: stellr-missing-biometric-auth
+    message: |
+      MEDIUM: Consider implementing biometric authentication for sensitive operations.
+    severity: INFO
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          SecureStore.setItemAsync($KEY, $VALUE)
+    pattern-where-python: |
+      not any(bio_keyword in "$KEY".lower() for bio_keyword in ['biometric', 'fingerprint', 'faceid', 'touchid'])
+  
+  # =====================================================================
+  # SUPABASE RLS AND DATABASE SECURITY
+  # =====================================================================
+  
+  - id: stellr-rls-policy-bypass-risk
+    message: |
+      CRITICAL: Potential RLS policy bypass. Service role access detected in client code.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              supabase.auth.admin.$METHOD(...)
+          - pattern: |
+              createClient($URL, $SERVICE_ROLE_KEY)
+          - pattern: |
+              $CLIENT.rpc($FUNC_NAME, $PARAMS, {count: 'exact'})
+    pattern-where-python: |
+      'service' in "$SERVICE_ROLE_KEY".lower() or 'role' in "$SERVICE_ROLE_KEY".lower()
+  
+  - id: stellr-sql-injection-risk
+    message: |
+      HIGH: Potential SQL injection vulnerability. Use parameterized queries.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $CLIENT.rpc($FUNC_NAME, `... ${$USER_INPUT} ...`)
+          - pattern: |
+              $CLIENT.from($TABLE).select(`... ${$USER_INPUT} ...`)
+          - pattern: |
+              sql`... ${$USER_INPUT} ...`
+  
+  - id: stellr-cross-user-data-access
+    message: |
+      CRITICAL: Potential cross-user data access. Ensure user ID validation.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              .eq('user_id', $PARAMS.userId)
+          - pattern: |
+              .filter(user => user.user_id === $PARAMS.userId)
+          - pattern: |
+              WHERE user_id = $PARAMS.userId
+    pattern-where-python: |
+      'params' in "$PARAMS".lower() and not any(validate in code for validate in ['validate', 'check', 'verify'])
+  
+  # =====================================================================
+  # API AND NETWORK SECURITY
+  # =====================================================================
+  
+  - id: stellr-http-url-usage
+    message: |
+      HIGH: HTTP URL detected. All network requests must use HTTPS for security.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-regex: http://(?!localhost|127\.0\.0\.1|0\.0\.0\.0)
+  
+  - id: stellr-missing-request-validation
+    message: |
+      MEDIUM: API request missing input validation. Implement comprehensive validation.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          fetch($URL, {
+            method: 'POST',
+            body: JSON.stringify($DATA),
+            ...
+          })
+    pattern-where-python: |
+      not any(validate in code for validate in ['validate', 'sanitize', 'clean', 'check'])
+  
+  - id: stellr-missing-certificate-pinning
+    message: |
+      HIGH: Network request without certificate pinning. Implement cert pinning for production.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          fetch($URL, $OPTIONS)
+    pattern-where-python: |
+      'https://' in "$URL" and not any(pin in code for pin in ['pinning', 'certificate', 'ssl'])
+  
+  # =====================================================================
+  # MOBILE SECURITY VULNERABILITIES
+  # =====================================================================
+  
+  - id: stellr-insecure-webview
+    message: |
+      HIGH: WebView with JavaScript enabled poses security risks. Disable unless necessary.
+    severity: WARNING
+    languages: [typescript, javascript, tsx, jsx]
+    patterns:
+      - pattern: |
+          <WebView javaScriptEnabled={true} ... />
+      - pattern: |
+          <WebView javaScriptEnabled ... />
+  
+  - id: stellr-webview-missing-security-props
+    message: |
+      MEDIUM: WebView missing security configuration. Add security properties.
+    severity: WARNING
+    languages: [tsx, jsx]
+    patterns:
+      - pattern: |
+          <WebView $PROPS />
+    pattern-where-python: |
+      not any(security_prop in "$PROPS" for security_prop in ['domStorageEnabled', 'mixedContentMode', 'allowsBackForwardNavigationGestures'])
+  
+  - id: stellr-deep-link-validation-missing
+    message: |
+      HIGH: Deep link handling without validation. Validate all incoming URLs.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              Linking.getInitialURL().then($CALLBACK)
+          - pattern: |
+              Linking.addEventListener('url', $CALLBACK)
+    pattern-where-python: |
+      not any(validate in "$CALLBACK" for validate in ['validate', 'sanitize', 'verify', 'check'])
+  
+  # =====================================================================
+  # FILE AND DATA SECURITY
+  # =====================================================================
+  
+  - id: stellr-photo-upload-security
+    message: |
+      HIGH: Photo upload missing security checks. Implement EXIF stripping and validation.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          $CLIENT.storage.from($BUCKET).upload($PATH, $FILE)
+    pattern-where-python: |
+      not any(security in code for security in ['exif', 'strip', 'sanitize', 'validate'])
+  
+  - id: stellr-file-path-traversal
+    message: |
+      HIGH: Potential path traversal vulnerability. Validate file paths.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              fs.readFile($PATH, ...)
+          - pattern: |
+              fs.writeFile($PATH, ...)
+          - pattern: |
+              require($PATH)
+    pattern-where-python: |
+      '..' in "$PATH" or '$' in "$PATH"
+  
+  # =====================================================================
+  # PRIVACY AND COMPLIANCE
+  # =====================================================================
+  
+  - id: stellr-pii-in-logs
+    message: |
+      HIGH: Potential PII in log statements. Implement data scrubbing.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              console.log($MSG, $USER.email, ...)
+          - pattern: |
+              console.log($MSG, $USER.phone, ...)
+          - pattern: |
+              logger.info($MSG, $USER.name, ...)
+    pattern-where-python: |
+      any(pii in "$MSG".lower() for pii in ['email', 'phone', 'name', 'address', 'ssn'])
+  
+  - id: stellr-missing-consent-tracking
+    message: |
+      MEDIUM: User data collection without consent tracking. Implement GDPR compliance.
+    severity: INFO
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          analytics.track($EVENT, {user_id: $USER_ID, ...})
+    pattern-where-python: |
+      not any(consent in code for consent in ['consent', 'gdpr', 'privacy', 'agree'])
+  
+  # =====================================================================
+  # PAYMENT SECURITY (STRIPE)
+  # =====================================================================
+  
+  - id: stellr-stripe-amount-validation
+    message: |
+      HIGH: Payment amount manipulation risk. Validate amounts server-side.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          stripe.paymentIntents.create({
+            amount: $AMOUNT,
+            ...
+          })
+    pattern-where-python: |
+      '$' in "$AMOUNT" or 'params' in "$AMOUNT".lower()
+  
+  - id: stellr-webhook-signature-missing
+    message: |
+      CRITICAL: Webhook without signature verification. Implement signature validation.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          app.post('/webhook', (req, res) => {
+            const $EVENT = req.body;
+            ...
+          })
+    pattern-where-python: |
+      not any(sig in code for sig in ['signature', 'verify', 'stripe.webhooks.constructEvent'])
+  
+  # =====================================================================
+  # ERROR HANDLING SECURITY
+  # =====================================================================
+  
+  - id: stellr-sensitive-error-disclosure
+    message: |
+      MEDIUM: Error message may disclose sensitive information.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              throw new Error(`... ${$SENSITIVE} ...`)
+          - pattern: |
+              res.status(500).json({error: $ERROR.message})
+    pattern-where-python: |
+      any(sensitive in "$SENSITIVE".lower() for sensitive in ['password', 'token', 'secret', 'database', 'sql'])
+  
+  - id: stellr-unhandled-promise-rejection
+    message: |
+      MEDIUM: Unhandled promise rejection may lead to security issues.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          $PROMISE.then($SUCCESS_CALLBACK)
+    pattern-where-python: |
+      '.catch' not in code
+  
+  # =====================================================================
+  # CONFIGURATION SECURITY
+  # =====================================================================
+  
+  - id: stellr-debug-code-in-production
+    message: |
+      HIGH: Debug code detected. Remove before production deployment.
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              console.log(...)
+          - pattern: |
+              debugger;
+          - pattern: |
+              if (__DEV__) { ... }
+    paths:
+      exclude:
+        - "**/__tests__/**"
+        - "**/*.test.*"
+        - "**/debug/**"
+  
+  - id: stellr-environment-variable-exposure
+    message: |
+      MEDIUM: Environment variable may be exposed to client. Use EXPO_PUBLIC_ prefix only for public values.
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          process.env.$VAR
+    pattern-where-python: |
+      not "$VAR".startswith('EXPO_PUBLIC_') and any(sensitive in "$VAR".lower() for sensitive in ['key', 'secret', 'token', 'password'])
+
+# =====================================================================
+# METADATA AND CONFIGURATION
+# =====================================================================
+
+metadata:
+  name: "Stellr Comprehensive Security Rules"
+  version: "1.0.0"
+  author: "Stellr Security Team"
+  description: "Production-grade security rules for investor audit compliance"
+  category: "security"
+  confidence: "HIGH"
+  likelihood: "HIGH"
+  impact: "HIGH"
+  technology:
+    - "React Native"
+    - "TypeScript"
+    - "Supabase"
+    - "Stripe"
+    - "Expo"

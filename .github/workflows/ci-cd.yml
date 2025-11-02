@@ -1,0 +1,492 @@
+# =====================================================================
+# STELLR CI/CD PIPELINE
+# =====================================================================
+# Comprehensive continuous integration and deployment pipeline
+# Includes: Testing, Linting, Type Checking, Bundle Analysis, Accessibility
+
+name: 🚀 CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+  CACHE_VERSION: '1'
+  COVERAGE_THRESHOLD: '85'
+
+jobs:
+  # =====================================================================
+  # SETUP AND VALIDATION
+  # =====================================================================
+  setup:
+    name: 🛠️ Setup & Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    outputs:
+      node-version: ${{ steps.setup.outputs.node-version }}
+      cache-key: ${{ steps.setup.outputs.cache-key }}
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 🛠️ Setup Environment
+        id: setup
+        run: |
+          echo "node-version=${{ env.NODE_VERSION }}" >> $GITHUB_OUTPUT
+          echo "cache-key=node-modules-${{ hashFiles('package-lock.json') }}-${{ env.CACHE_VERSION }}" >> $GITHUB_OUTPUT
+          
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 🔍 Validate Package Files
+        run: |
+          echo "🔍 Validating package configuration..."
+          if [ ! -f "package.json" ]; then
+            echo "::error::package.json not found"
+            exit 1
+          fi
+          
+          if [ ! -f "package-lock.json" ]; then
+            echo "::warning::package-lock.json not found. Consider using npm ci for reproducible builds."
+          fi
+          
+          # Check for required scripts
+          required_scripts=("start" "test" "lint" "type-check")
+          for script in "${required_scripts[@]}"; do
+            if ! jq -e ".scripts.\"$script\"" package.json > /dev/null; then
+              echo "::warning::Required script '$script' not found in package.json"
+            fi
+          done
+          
+          echo "✅ Package validation completed"
+          
+      - name: 🔒 Install Dependencies
+        run: |
+          echo "📦 Installing dependencies..."
+          npm ci --legacy-peer-deps
+          
+      - name: 📊 Cache Dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ steps.setup.outputs.cache-key }}
+
+  # =====================================================================
+  # LINTING AND TYPE CHECKING
+  # =====================================================================
+  lint-and-types:
+    name: 🧹 Lint & Type Check
+    runs-on: ubuntu-latest
+    needs: setup
+    timeout-minutes: 15
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
+          
+      - name: 📦 Restore Dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          
+      - name: 🔒 Install Dependencies (if cache miss)
+        run: |
+          if [ ! -d "node_modules" ]; then
+            npm ci --legacy-peer-deps
+          fi
+          
+      - name: 🧹 Run ESLint
+        run: |
+          echo "🧹 Running ESLint with security rules..."
+          npm run lint
+          
+      - name: 🔍 TypeScript Type Check
+        run: |
+          echo "🔍 Running TypeScript type checking..."
+          npm run type-check
+          
+      - name: 📊 Generate Lint Report
+        if: always()
+        run: |
+          echo "📊 Generating lint report..."
+          npm run lint -- --format json --output-file eslint-report.json || true
+          
+      - name: 📤 Upload Lint Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: eslint-report.json
+          retention-days: 30
+
+  # =====================================================================
+  # TESTING PIPELINE
+  # =====================================================================
+  test:
+    name: 🧪 Test Suite
+    runs-on: ubuntu-latest
+    needs: setup
+    timeout-minutes: 30
+    
+    strategy:
+      matrix:
+        test-type: [unit, integration, security, accessibility]
+        
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
+          
+      - name: 📦 Restore Dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          
+      - name: 🔒 Install Dependencies (if cache miss)
+        run: |
+          if [ ! -d "node_modules" ]; then
+            npm ci --legacy-peer-deps
+          fi
+          
+      - name: 🧪 Run Tests - ${{ matrix.test-type }}
+        run: |
+          case "${{ matrix.test-type }}" in
+            "unit")
+              echo "🧪 Running unit tests..."
+              npm test -- --coverage --passWithNoTests
+              ;;
+            "integration")
+              echo "🔗 Running integration tests..."
+              if npm run | grep -q "test:integration"; then
+                npm run test:integration
+              else
+                echo "No integration tests configured"
+              fi
+              ;;
+            "security")
+              echo "🔒 Running security tests..."
+              if npm run | grep -q "test:security-comprehensive"; then
+                npm run test:security-comprehensive
+              else
+                echo "No security tests configured"
+              fi
+              ;;
+            "accessibility")
+              echo "♿ Running accessibility tests..."
+              if npm run | grep -q "test:accessibility"; then
+                npm run test:accessibility
+              else
+                echo "No accessibility tests configured"
+              fi
+              ;;
+          esac
+          
+      - name: 📊 Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.test-type }}
+          path: |
+            coverage/
+            test-results.xml
+          retention-days: 30
+
+  # =====================================================================
+  # COVERAGE ANALYSIS
+  # =====================================================================
+  coverage:
+    name: 📊 Coverage Analysis
+    runs-on: ubuntu-latest
+    needs: [setup, test]
+    timeout-minutes: 15
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
+          
+      - name: 📦 Restore Dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          
+      - name: 🔒 Install Dependencies (if cache miss)
+        run: |
+          if [ ! -d "node_modules" ]; then
+            npm ci --legacy-peer-deps
+          fi
+          
+      - name: 📊 Generate Coverage Report
+        run: |
+          echo "📊 Generating comprehensive coverage report..."
+          npm run test:coverage || npm test -- --coverage
+          
+      - name: 🎯 Check Coverage Threshold
+        run: |
+          echo "🎯 Checking coverage threshold (${COVERAGE_THRESHOLD}%)..."
+          
+          if [ -f "coverage/coverage-summary.json" ]; then
+            # Extract coverage percentages
+            LINES=$(jq -r '.total.lines.pct' coverage/coverage-summary.json)
+            FUNCTIONS=$(jq -r '.total.functions.pct' coverage/coverage-summary.json)
+            BRANCHES=$(jq -r '.total.branches.pct' coverage/coverage-summary.json)
+            STATEMENTS=$(jq -r '.total.statements.pct' coverage/coverage-summary.json)
+            
+            echo "Coverage Summary:"
+            echo "Lines: ${LINES}%"
+            echo "Functions: ${FUNCTIONS}%"
+            echo "Branches: ${BRANCHES}%"
+            echo "Statements: ${STATEMENTS}%"
+            
+            # Check if all metrics meet threshold
+            if (( $(echo "$LINES >= $COVERAGE_THRESHOLD" | bc -l) )) && \
+               (( $(echo "$FUNCTIONS >= $COVERAGE_THRESHOLD" | bc -l) )) && \
+               (( $(echo "$BRANCHES >= $COVERAGE_THRESHOLD" | bc -l) )) && \
+               (( $(echo "$STATEMENTS >= $COVERAGE_THRESHOLD" | bc -l) )); then
+              echo "✅ Coverage threshold met!"
+            else
+              echo "❌ Coverage below threshold (${COVERAGE_THRESHOLD}%)"
+              echo "::error::Test coverage is below the required threshold"
+              exit 1
+            fi
+          else
+            echo "::warning::Coverage report not found"
+          fi
+          
+      - name: 📤 Upload Coverage Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: coverage/
+          retention-days: 30
+
+  # =====================================================================
+  # EXPO CONFIGURATION VALIDATION
+  # =====================================================================
+  expo-validation:
+    name: 📱 Expo Configuration
+    runs-on: ubuntu-latest
+    needs: setup
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
+          
+      - name: 📦 Restore Dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          
+      - name: 🔒 Install Dependencies (if cache miss)
+        run: |
+          if [ ! -d "node_modules" ]; then
+            npm ci --legacy-peer-deps
+          fi
+          
+      - name: 📱 Expo Doctor Check
+        run: |
+          echo "📱 Running Expo doctor..."
+          npx expo-doctor || echo "Expo doctor completed with warnings"
+          
+      - name: ⚙️ Validate App Configuration
+        run: |
+          echo "⚙️ Validating app.json configuration..."
+          
+          if [ -f "app.json" ]; then
+            # Check required fields
+            required_fields=(".expo.name" ".expo.slug" ".expo.version" ".expo.ios.bundleIdentifier" ".expo.android.package")
+            
+            for field in "${required_fields[@]}"; do
+              if ! jq -e "$field" app.json > /dev/null 2>&1; then
+                echo "::error::Missing required field: $field"
+                exit 1
+              fi
+            done
+            
+            # Security checks
+            if jq -e '.expo.extra.debug == true' app.json > /dev/null 2>&1; then
+              echo "::warning::Debug mode enabled in app.json"
+            fi
+            
+            echo "✅ App configuration validation passed"
+          else
+            echo "::error::app.json not found"
+            exit 1
+          fi
+          
+      - name: 🔒 EAS Configuration Check
+        run: |
+          echo "🔒 Checking EAS configuration..."
+          
+          if [ -f "eas.json" ]; then
+            # Validate build profiles
+            if ! jq -e '.build.production' eas.json > /dev/null 2>&1; then
+              echo "::error::Production build profile missing in eas.json"
+              exit 1
+            fi
+            
+            # Check environment configuration
+            if jq -e '.build.production.env' eas.json > /dev/null 2>&1; then
+              echo "✅ Production environment configured"
+            fi
+            
+            echo "✅ EAS configuration validation passed"
+          else
+            echo "::warning::eas.json not found"
+          fi
+
+  # =====================================================================
+  # QUALITY GATE
+  # =====================================================================
+  quality-gate:
+    name: 🚪 Quality Gate
+    runs-on: ubuntu-latest
+    needs: [lint-and-types, test, coverage, expo-validation]
+    if: always()
+    timeout-minutes: 5
+    
+    steps:
+      - name: 📊 Evaluate Quality Metrics
+        run: |
+          echo "📊 Evaluating quality gate metrics..."
+          
+          # Check job results
+          LINT_RESULT="${{ needs.lint-and-types.result }}"
+          TEST_RESULT="${{ needs.test.result }}"
+          COVERAGE_RESULT="${{ needs.coverage.result }}"
+          EXPO_RESULT="${{ needs.expo-validation.result }}"
+          
+          echo "Results Summary:"
+          echo "- Lint & Types: $LINT_RESULT"
+          echo "- Tests: $TEST_RESULT"
+          echo "- Coverage: $COVERAGE_RESULT"
+          echo "- Expo Config: $EXPO_RESULT"
+          
+          # Determine overall status
+          if [ "$LINT_RESULT" = "success" ] && \
+             [ "$TEST_RESULT" = "success" ] && \
+             [ "$COVERAGE_RESULT" = "success" ] && \
+             [ "$EXPO_RESULT" = "success" ]; then
+            echo "✅ Quality gate PASSED"
+            echo "🚀 Ready for deployment"
+          else
+            echo "❌ Quality gate FAILED"
+            echo "🛑 Deployment blocked"
+            exit 1
+          fi
+          
+      - name: 🎉 Quality Gate Success
+        if: success()
+        run: |
+          echo "🎉 All quality checks passed!"
+          echo "✅ Code quality meets production standards"
+          echo "🚀 Pipeline ready for deployment"
+          
+      - name: 🚨 Quality Gate Failure
+        if: failure()
+        run: |
+          echo "🚨 Quality gate failed!"
+          echo "❌ Please fix the failing checks before proceeding"
+          echo "📝 Review the job logs for specific issues"
+
+  # =====================================================================
+  # DEPLOYMENT READINESS
+  # =====================================================================
+  deployment-readiness:
+    name: 🚀 Deployment Readiness
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    if: success() && github.ref == 'refs/heads/main'
+    timeout-minutes: 5
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 🚀 Deployment Readiness Check
+        run: |
+          echo "🚀 Checking deployment readiness..."
+          
+          # Check if this is a deployment commit
+          if [[ "${{ github.event.head_commit.message }}" == *"[deploy]"* ]] || \
+             [[ "${{ github.event.head_commit.message }}" == *"[release]"* ]]; then
+            echo "🚀 Deployment triggered by commit message"
+            echo "DEPLOY=true" >> $GITHUB_ENV
+          else
+            echo "ℹ️ No deployment triggered"
+            echo "DEPLOY=false" >> $GITHUB_ENV
+          fi
+          
+      - name: 📋 Pre-deployment Checklist
+        if: env.DEPLOY == 'true'
+        run: |
+          echo "📋 Running pre-deployment checklist..."
+          
+          # Check environment files
+          if [ -f ".env.production.example" ]; then
+            echo "✅ Production environment template exists"
+          else
+            echo "❌ Missing .env.production.example"
+            exit 1
+          fi
+          
+          # Check deployment scripts
+          if [ -f "scripts/deployment/deploy-production.sh" ]; then
+            echo "✅ Deployment script exists"
+          else
+            echo "❌ Missing deployment script"
+            exit 1
+          fi
+          
+          echo "✅ Deployment readiness check passed"
+          echo "🚀 Ready for production deployment"
+          
+      - name: 🎯 Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Ready for Deployment**: ${{ env.DEPLOY }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Quality Metrics Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Linting and Type Checking" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Suite (Unit, Integration, Security, Accessibility)" >> $GITHUB_STEP_SUMMARY
+          echo "- Code Coverage ≥ ${{ env.COVERAGE_THRESHOLD }}%" >> $GITHUB_STEP_SUMMARY
+          echo "- Expo Configuration Validation" >> $GITHUB_STEP_SUMMARY

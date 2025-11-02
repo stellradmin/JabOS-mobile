@@ -1,0 +1,66 @@
+#!/usr/bin/env sh
+# =================================================================
+# STELLR COMMIT MESSAGE HOOK
+# =================================================================
+# Validates commit message format and prevents sensitive information
+
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Read the commit message
+commit_msg_file=$1
+commit_msg=$(cat "$commit_msg_file")
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+print_status() {
+    local color=$1
+    local message=$2
+    echo -e "${color}$message${NC}" >&2
+}
+
+print_status $BLUE "🔍 Validating commit message..."
+
+# Check for secrets in commit message
+if echo "$commit_msg" | grep -qE "(sk_|pk_|rk_|whsec_|eyJ.*\.eyJ|[A-Za-z0-9+/]{32,}={0,2})"; then
+    print_status $RED "❌ COMMIT BLOCKED: Potential secrets detected in commit message!"
+    print_status $YELLOW "   Never include API keys, tokens, or passwords in commit messages"
+    exit 1
+fi
+
+# Check for email addresses (might be personal info)
+if echo "$commit_msg" | grep -qE "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"; then
+    print_status $YELLOW "⚠️ Email address detected in commit message"
+    print_status $YELLOW "   Consider using @username instead for privacy"
+fi
+
+# Check for URLs that might contain sensitive info
+if echo "$commit_msg" | grep -qE "https?://[^\s]*[?&](token|key|secret|password|api_key)="; then
+    print_status $RED "❌ COMMIT BLOCKED: URL with sensitive parameters in commit message!"
+    exit 1
+fi
+
+# Encourage good commit practices
+commit_length=${#commit_msg}
+if [ $commit_length -lt 10 ]; then
+    print_status $YELLOW "⚠️ Commit message is very short. Consider adding more context."
+elif [ $commit_length -gt 72 ]; then
+    first_line=$(echo "$commit_msg" | head -n1)
+    if [ ${#first_line} -gt 72 ]; then
+        print_status $YELLOW "⚠️ First line is longer than 72 characters. Consider shortening."
+    fi
+fi
+
+# Check for conventional commit format (optional)
+if echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|security|perf)(\(.+\))?: "; then
+    print_status $GREEN "✅ Conventional commit format detected"
+elif echo "$commit_msg" | grep -qE "^(🔒|🚀|📱|🛠️|🧪|📝|🎨|♻️|⚡|🐛|✨)"; then
+    print_status $GREEN "✅ Emoji commit format detected"
+fi
+
+print_status $GREEN "✅ Commit message validation passed"
+exit 0

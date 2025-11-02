@@ -1,0 +1,44 @@
+{
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development"
+      },
+      "channel": "development",
+      "ios": {
+        "buildConfiguration": "Debug",
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "preview"
+      },
+      "channel": "preview",
+      "ios": {
+        "buildConfiguration": "Release",
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production"
+      },
+      "channel": "production",
+      "ios": {
+        "buildConfiguration": "Release",
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

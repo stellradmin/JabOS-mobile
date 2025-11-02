@@ -1,0 +1,251 @@
+# =====================================================================
+# GITLEAKS CONFIGURATION FOR STELLR DATING APP
+# =====================================================================
+# Comprehensive secret detection to prevent sensitive data exposure
+# Usage: gitleaks detect -v -s . -c .gitleaks.toml --redact --no-banner
+
+title = "Stellr Security: Secret Detection Configuration"
+
+[extend]
+# Use default gitleaks rules as base
+useDefault = true
+
+# =====================================================================
+# CUSTOM RULES FOR STELLR-SPECIFIC SECRETS
+# =====================================================================
+
+[[rules]]
+id = "supabase-service-role-key"
+description = "Supabase Service Role Key - CRITICAL: Never commit"
+regex = '''eyJ[A-Za-z0-9_\/\+\-]{50,}'''
+tags = ["supabase", "service-role", "critical"]
+keywords = [
+    "supabase",
+    "service_role",
+    "service-role",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+]
+
+[[rules]]
+id = "supabase-anon-key"
+description = "Supabase Anonymous Key - Should only be in EXPO_PUBLIC_ vars"
+regex = '''eyJ[A-Za-z0-9_\/\+\-]{50,}\.eyJ[A-Za-z0-9_\/\+\-]{50,}'''
+tags = ["supabase", "anon-key", "high"]
+keywords = ["supabase", "anon"]
+
+[[rules]]
+id = "stripe-secret-key"
+description = "Stripe Secret Key - CRITICAL: Never commit"
+regex = '''sk_(test|live)_[0-9a-zA-Z]{24,}'''
+tags = ["stripe", "secret-key", "critical"]
+keywords = ["stripe", "sk_"]
+
+[[rules]]
+id = "stripe-webhook-secret"
+description = "Stripe Webhook Secret"
+regex = '''whsec_[0-9a-zA-Z]{32,}'''
+tags = ["stripe", "webhook", "high"]
+keywords = ["webhook", "whsec_"]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API Key"
+regex = '''sk-[0-9a-zA-Z]{32,}'''
+tags = ["openai", "api-key", "high"]
+keywords = ["openai", "sk-"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key"
+regex = '''AKIA[0-9A-Z]{16}'''
+tags = ["aws", "access-key", "critical"]
+keywords = ["AKIA", "aws"]
+
+[[rules]]
+id = "google-oauth-secret"
+description = "Google OAuth Client Secret"
+regex = '''GOCSPX-[0-9a-zA-Z_\-]{28}'''
+tags = ["google", "oauth", "medium"]
+keywords = ["GOCSPX", "google"]
+
+[[rules]]
+id = "apple-private-key"
+description = "Apple Private Key"
+regex = '''-----BEGIN PRIVATE KEY-----[^-]+-----END PRIVATE KEY-----'''
+tags = ["apple", "private-key", "critical"]
+keywords = ["PRIVATE KEY", "apple"]
+
+[[rules]]
+id = "sentry-auth-token"
+description = "Sentry Authentication Token"
+regex = '''[0-9a-f]{64}'''
+tags = ["sentry", "auth-token", "medium"]
+keywords = ["sentry", "auth"]
+secretGroup = 1
+
+[[rules]]
+id = "posthog-api-key"
+description = "PostHog API Key"
+regex = '''phc_[0-9a-zA-Z]{43}'''
+tags = ["posthog", "api-key", "medium"]
+keywords = ["posthog", "phc_"]
+
+[[rules]]
+id = "expo-access-token"
+description = "Expo Access Token"
+regex = '''[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+tags = ["expo", "access-token", "high"]
+keywords = ["expo", "token"]
+
+[[rules]]
+id = "firebase-private-key"
+description = "Firebase Private Key"
+regex = '''"private_key":\s*"-----BEGIN PRIVATE KEY-----[^"]+-----END PRIVATE KEY-----"'''
+tags = ["firebase", "private-key", "critical"]
+keywords = ["firebase", "private_key"]
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT Secret Key"
+regex = '''[A-Za-z0-9+/]{32,}={0,2}'''
+tags = ["jwt", "secret", "high"]
+keywords = ["jwt", "secret", "token"]
+
+# =====================================================================
+# ALLOWLIST - EXCEPTIONS FOR FALSE POSITIVES
+# =====================================================================
+
+[[rules.allowlist]]
+description = "Ignore placeholder secrets in example files"
+regexes = [
+    '''your-.*-key.*''',
+    '''your-.*-secret.*''',
+    '''your-.*-token.*''',
+    '''your-.*-id.*''',
+    '''example-.*''',
+    '''test-.*-placeholder''',
+    '''\[MOVED_TO_EAS_SECRETS\]''',
+    '''\[STORE_IN_EAS_SECRETS_ONLY\]''',
+    '''\[LOAD_FROM_SECURE_TEST_CONFIG\]'''
+]
+
+[[rules.allowlist]]
+description = "Ignore common test values"
+regexes = [
+    '''test123''',
+    '''password123''',
+    '''secret123''',
+    '''dummy.*''',
+    '''mock.*''',
+    '''fake.*'''
+]
+
+[[rules.allowlist]]
+description = "Ignore documentation examples"
+paths = [
+    '''.*\.md$''',
+    '''.*\.mdx$''',
+    '''.*README.*''',
+    '''.*CHANGELOG.*''',
+    '''.*\.example$''',
+    '''.*\.sample$''',
+    '''.*\.template$'''
+]
+
+[[rules.allowlist]]
+description = "Ignore node_modules and build artifacts"
+paths = [
+    '''node_modules/.*''',
+    '''build/.*''',
+    '''dist/.*''',
+    '''\.expo/.*''',
+    '''\.next/.*''',
+    '''coverage/.*''',
+    '''ios/build/.*''',
+    '''android/build/.*''',
+    '''android/app/build/.*'''
+]
+
+[[rules.allowlist]]
+description = "Ignore git objects and logs"
+paths = [
+    '''\.git/.*''',
+    '''\.gitmodules''',
+    '''.*\.log$''',
+    '''.*\.logs$'''
+]
+
+[[rules.allowlist]]
+description = "Ignore package locks and manifests"
+paths = [
+    '''package-lock\.json$''',
+    '''yarn\.lock$''',
+    '''Podfile\.lock$''',
+    '''Gemfile\.lock$'''
+]
+
+# =====================================================================
+# GLOBAL CONFIGURATION
+# =====================================================================
+
+[allowlist]
+description = "Global allowlist for common false positives"
+regexes = [
+    # Common false positives
+    '''(?i)version\s*=\s*['""][0-9]+\.[0-9]+\.[0-9]+['""]''',
+    '''(?i)port\s*=\s*['""]?[0-9]+['""]?''',
+    '''(?i)timeout\s*=\s*['""]?[0-9]+['""]?''',
+    # Base64 encoded images/assets (shorter ones)
+    '''data:image/[^;]+;base64,[A-Za-z0-9+/]{1,100}={0,2}''',
+    # Common hash patterns that aren't secrets
+    '''[a-f0-9]{32}''' # Generic 32-char hex (could be MD5 hashes)
+]
+
+paths = [
+    # Ignore specific non-sensitive files
+    '''.*\.lock$''',
+    '''.*\.pid$''',
+    '''.*\.tmp$''',
+    '''.*\.temp$''',
+    # Ignore compiled/generated files
+    '''.*\.js\.map$''',
+    '''.*\.css\.map$''',
+    # Ignore certificate files (as they should be public)
+    '''.*\.crt$''',
+    '''.*\.pem$''' # Only if they're public certificates
+]
+
+# =====================================================================
+# ENTROPY DETECTION CONFIGURATION
+# =====================================================================
+
+[allowlist.entropy]
+description = "Allowlist for high entropy strings that aren't secrets"
+regexes = [
+    # Long base64 strings in data URIs
+    '''data:[^;]+;base64,[A-Za-z0-9+/]+={0,2}''',
+    # Package integrity hashes
+    '''integrity.*sha[0-9]+.*''',
+    # Git commit hashes
+    '''[a-f0-9]{40}''',
+    # UUID patterns
+    '''[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+]
+
+# =====================================================================
+# SEVERITY LEVELS
+# =====================================================================
+# Rules are tagged with severity:
+# - critical: Service role keys, private keys, production secrets
+# - high: API keys that could cause financial damage
+# - medium: API keys with limited scope
+# - low: Development/test keys
+
+# Usage examples:
+# Basic scan: gitleaks detect -v -s . -c .gitleaks.toml
+# Pre-commit: gitleaks protect -v -c .gitleaks.toml
+# History scan: gitleaks detect -v -s . -c .gitleaks.toml --log-opts="--all"
+# Specific file: gitleaks detect -v -s path/to/file -c .gitleaks.toml
+
+# For CI/CD integration:
+# gitleaks detect -v -s . -c .gitleaks.toml --redact --no-banner --report-format json --report-path .artifacts/gitleaks.json

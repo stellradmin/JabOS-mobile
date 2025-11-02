@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true,
+    "useUnknownInCatchVariables": false
+  },
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "src/contexts/**/*.ts",
+    "src/contexts/**/*.tsx",
+    "src/lib/**/*.ts",
+    "src/lib/**/*.tsx",
+    "src/types/**/*.ts",
+    "types/**/*.d.ts",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "src/hooks/**",
+    "src/utils/**",
+    "tests/**",
+    "__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
+}

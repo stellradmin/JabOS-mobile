@@ -1,0 +1,306 @@
+# =====================================================================
+# STELLR SECURITY AUDIT WORKFLOW
+# =====================================================================
+# Comprehensive security scanning and validation pipeline
+# Runs on: Push to main, Pull Requests, Manual trigger
+
+name: 🔒 Security Audit
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch: # Manual trigger
+  schedule:
+    # Run security audit daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  NODE_VERSION: '18'
+  CACHE_VERSION: '1'
+
+jobs:
+  # =====================================================================
+  # SECRET SCANNING
+  # =====================================================================
+  secrets-scan:
+    name: 🔍 Secret Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for comprehensive scan
+          
+      - name: 🔍 Install Gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz | tar -xz
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+          
+      - name: 🛡️ Run Secret Scan
+        run: |
+          echo "🔍 Scanning for secrets in repository..."
+          gitleaks detect -v -s . -c .gitleaks.toml --redact --no-banner --report-format json --report-path gitleaks-report.json
+          
+      - name: 📊 Upload Gitleaks Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          retention-days: 30
+          
+      - name: 🚨 Security Alert on Secrets Found
+        if: failure()
+        run: |
+          echo "::error::🚨 CRITICAL: Secrets detected in repository!"
+          echo "::error::Review the gitleaks report and remove all sensitive data immediately."
+          echo "::error::Never commit API keys, tokens, passwords, or other secrets to version control."
+          exit 1
+
+  # =====================================================================
+  # DEPENDENCY SECURITY
+  # =====================================================================
+  dependency-audit:
+    name: 📦 Dependency Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 🔒 Install Dependencies
+        run: npm ci --legacy-peer-deps --audit
+        
+      - name: 🛡️ Audit Dependencies
+        run: |
+          echo "🔍 Checking for known vulnerabilities..."
+          npm audit --audit-level=high --json > audit-report.json || true
+          
+          # Check if there are high or critical vulnerabilities
+          if npm audit --audit-level=high > /dev/null 2>&1; then
+            echo "✅ No high-severity vulnerabilities found"
+          else
+            echo "🚨 High-severity vulnerabilities detected!"
+            npm audit --audit-level=high
+            echo "::warning::High-severity vulnerabilities found. Review and update dependencies."
+          fi
+          
+      - name: 📊 Upload Audit Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: audit-report.json
+          retention-days: 30
+          
+      - name: 🔍 Check for Outdated Dependencies
+        run: |
+          echo "📦 Checking for outdated dependencies..."
+          npm outdated || echo "Some dependencies are outdated"
+
+  # =====================================================================
+  # CODE SECURITY ANALYSIS
+  # =====================================================================
+  code-security:
+    name: 🔒 Code Security Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 🔒 Install Dependencies
+        run: npm ci --legacy-peer-deps
+        
+      - name: 🧪 Run Security Tests
+        run: |
+          echo "🧪 Running security-specific tests..."
+          if [ -f "package.json" ] && npm run | grep -q "test:security"; then
+            npm run test:security-comprehensive
+          else
+            echo "⚠️ No security tests found. Consider adding test:security script."
+          fi
+          
+      - name: 🔍 TypeScript Security Check
+        run: |
+          echo "🔍 Running TypeScript security analysis..."
+          npm run type-check
+          
+      - name: 🧹 Lint Security Issues
+        run: |
+          echo "🧹 Checking for security linting issues..."
+          npm run lint
+          
+      - name: 🔒 Environment Variable Security Check
+        run: |
+          echo "🔒 Validating environment variable security..."
+          
+          # Check for EXPO_PUBLIC_ variables that might contain sensitive data
+          echo "Checking EXPO_PUBLIC_ variables..."
+          if grep -r "EXPO_PUBLIC_.*SECRET\|EXPO_PUBLIC_.*KEY\|EXPO_PUBLIC_.*TOKEN" --include="*.env*" --include="*.js" --include="*.ts" --include="*.tsx" . || true; then
+            echo "::warning::Found potentially sensitive data in EXPO_PUBLIC_ variables"
+          fi
+          
+          # Check for hardcoded secrets in code
+          echo "Checking for hardcoded secrets in source code..."
+          if grep -r "sk_\|pk_live\|rk_live\|whsec_" --include="*.js" --include="*.ts" --include="*.tsx" src/ || true; then
+            echo "::error::Found potential hardcoded API keys in source code"
+            exit 1
+          fi
+
+  # =====================================================================
+  # MOBILE SECURITY
+  # =====================================================================
+  mobile-security:
+    name: 📱 Mobile Security Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 🔒 Install Dependencies
+        run: npm ci --legacy-peer-deps
+        
+      - name: 📱 Expo Configuration Security
+        run: |
+          echo "📱 Checking Expo configuration security..."
+          
+          # Check app.json for security issues
+          if [ -f "app.json" ]; then
+            echo "Checking app.json configuration..."
+            
+            # Check for debug flags in production
+            if jq -e '.expo.extra.debug' app.json > /dev/null 2>&1; then
+              echo "::warning::Debug flag found in app.json"
+            fi
+            
+            # Check for development settings
+            if jq -e '.expo.developmentClient' app.json > /dev/null 2>&1; then
+              echo "::warning::Development client configuration found"
+            fi
+            
+            # Verify required permissions are documented
+            echo "✅ App configuration security check completed"
+          fi
+          
+      - name: 🔒 React Native Security Check
+        run: |
+          echo "🔒 Checking React Native security patterns..."
+          
+          # Check for WebView security
+          if grep -r "WebView\|webview" --include="*.js" --include="*.ts" --include="*.tsx" src/ || true; then
+            echo "::warning::WebView usage detected. Ensure proper security configuration."
+          fi
+          
+          # Check for insecure storage usage
+          if grep -r "AsyncStorage" --include="*.js" --include="*.ts" --include="*.tsx" src/ || true; then
+            echo "::warning::AsyncStorage usage detected. Verify no sensitive data is stored."
+          fi
+          
+          echo "✅ React Native security check completed"
+
+  # =====================================================================
+  # SECURITY SUMMARY
+  # =====================================================================
+  security-summary:
+    name: 📋 Security Summary
+    runs-on: ubuntu-latest
+    needs: [secrets-scan, dependency-audit, code-security, mobile-security]
+    if: always()
+    
+    steps:
+      - name: 📥 Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-reports
+          
+      - name: 📋 Generate Security Summary
+        run: |
+          echo "# 🔒 Security Audit Summary" > security-summary.md
+          echo "" >> security-summary.md
+          echo "## 📊 Scan Results" >> security-summary.md
+          echo "" >> security-summary.md
+          
+          # Secrets scan status
+          if [ "${{ needs.secrets-scan.result }}" = "success" ]; then
+            echo "- ✅ **Secret Scan**: No secrets detected" >> security-summary.md
+          else
+            echo "- ❌ **Secret Scan**: Secrets detected - CRITICAL" >> security-summary.md
+          fi
+          
+          # Dependency audit status
+          if [ "${{ needs.dependency-audit.result }}" = "success" ]; then
+            echo "- ✅ **Dependency Audit**: No high-severity vulnerabilities" >> security-summary.md
+          else
+            echo "- ⚠️ **Dependency Audit**: Vulnerabilities found" >> security-summary.md
+          fi
+          
+          # Code security status
+          if [ "${{ needs.code-security.result }}" = "success" ]; then
+            echo "- ✅ **Code Security**: No security issues detected" >> security-summary.md
+          else
+            echo "- ❌ **Code Security**: Security issues found" >> security-summary.md
+          fi
+          
+          # Mobile security status
+          if [ "${{ needs.mobile-security.result }}" = "success" ]; then
+            echo "- ✅ **Mobile Security**: Configuration validated" >> security-summary.md
+          else
+            echo "- ⚠️ **Mobile Security**: Issues detected" >> security-summary.md
+          fi
+          
+          echo "" >> security-summary.md
+          echo "## 🛡️ Security Recommendations" >> security-summary.md
+          echo "" >> security-summary.md
+          echo "1. **Never commit secrets** - Use EAS secrets for sensitive configuration" >> security-summary.md
+          echo "2. **Keep dependencies updated** - Regularly update to patch vulnerabilities" >> security-summary.md
+          echo "3. **Use SecureStore** - Store sensitive data with proper encryption" >> security-summary.md
+          echo "4. **Validate inputs** - Sanitize all user inputs and API responses" >> security-summary.md
+          echo "5. **Monitor regularly** - Set up automated security scanning" >> security-summary.md
+          
+          cat security-summary.md
+          
+      - name: 📊 Upload Security Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: security-summary.md
+          retention-days: 30
+          
+      - name: 🚨 Fail on Critical Issues
+        if: needs.secrets-scan.result == 'failure'
+        run: |
+          echo "::error::🚨 CRITICAL SECURITY ISSUES DETECTED!"
+          echo "::error::Secrets were found in the repository. This is a blocking security issue."
+          echo "::error::Please remove all secrets and use proper secret management."
+          exit 1

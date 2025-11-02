@@ -1,0 +1,59 @@
+{
+  "google_play_console": {
+    "app_info": {
+      "title": "Stellr - Astrology Dating App",
+      "short_description": "Find cosmic love through astrology-based matching and verified connections",
+      "full_description": "🌟 FIND YOUR COSMIC CONNECTION WITH STELLR 🌟\n\nStellar is the astrology-based dating app that connects hearts through the cosmos. Let the stars guide you to meaningful relationships with verified, authentic matches.\n\n✨ KEY FEATURES:\n🔮 Astrological Compatibility - Advanced matching based on zodiac signs, birth charts, and celestial alignment\n📸 Photo Verification - Authentic profiles with verified pictures for safer dating\n🌙 Daily Cosmic Guidance - Personalized horoscopes and relationship insights\n💬 Secure Messaging - Safe, encrypted communication with your matches\n🎯 Smart Algorithm - Intelligent matching considering both personality and astrological compatibility\n⭐ Premium Insights - Unlock exclusive astrological features and enhanced matching\n\n🌟 WHY CHOOSE STELLR?\n• Trust the universe to guide your love life\n• Verified profiles ensure authentic connections\n• Deep compatibility analysis beyond surface attraction\n• Safe and secure platform built for meaningful relationships\n• Vibrant community of astrology enthusiasts\n• Regular updates with new features and cosmic insights\n\n💫 PERFECT FOR:\n• Astrology believers seeking like-minded partners\n• Singles looking for meaningful, authentic connections\n• Anyone interested in spiritual and cosmic compatibility\n• Those seeking safer dating with verified profiles\n\n🔐 PRIVACY & SAFETY:\n• Advanced photo verification technology\n• Secure messaging with end-to-end encryption\n• Comprehensive privacy controls\n• Safe reporting and blocking features\n• GDPR compliant data handling\n\n⭐ PREMIUM FEATURES:\n• Advanced birth chart compatibility analysis\n• Unlimited likes and super likes\n• See who liked your profile\n• Enhanced matching preferences\n• Priority customer support\n• Exclusive cosmic content and insights\n\nJoin thousands of users finding love written in the stars. Your perfect cosmic match is waiting among our verified, astrology-loving community.\n\nDownload Stellr today and let the universe guide your heart to true love! ✨🌟\n\n#AstrologyDating #CosmicLove #AuthenticConnections #VerifiedProfiles #SafeDating",
+      "package_name": "com.stellr.datingapp",
+      "category": "DATING",
+      "content_rating": "MATURE_17_PLUS",
+      "target_audience": "18-65",
+      "website": "https://stellr.app",
+      "email": "support@stellr.app",
+      "phone": "+1-555-STELLR",
+      "privacy_policy": "https://stellr.app/privacy"
+    },
+    "store_listing": {
+      "promotional_text": "🌟 NEW: Enhanced astrological matching now available! Find your cosmic soulmate with improved compatibility algorithms and daily celestial guidance. Download now and get your first month of premium features FREE! ✨",
+      "tags": [
+        "astrology",
+        "dating",
+        "zodiac",
+        "compatibility",
+        "love",
+        "relationships",
+        "horoscope",
+        "verified profiles",
+        "safe dating",
+        "cosmic connection"
+      ]
+    },
+    "content_rating_questionnaire": {
+      "user_generated_content": true,
+      "user_communication": true,
+      "physical_contact_info_sharing": true,
+      "personal_info_sharing": true,
+      "location_sharing": true,
+      "web_browsing": false,
+      "digital_purchases": true,
+      "unrestricted_web_access": false,
+      "mature_content": {
+        "sexual_content": "mild",
+        "violence": "none",
+        "language": "mild",
+        "gambling": false,
+        "alcohol": "none",
+        "drugs": "none"
+      }
+    },
+    "app_access": {
+      "instructions": "For Google Play Console review:\n\nDemo Account:\nEmail: demo@stellr.app\nPassword: DemoPassword123!\n\nThis demo account has access to all app features including:\n- Profile creation and verification\n- Astrology matching system\n- Messaging functionality\n- Premium features preview\n\nPlease note that some premium features may require subscription activation during review.\n\nFor any questions, contact: support@stellr.app"
+    }
+  },
+  "release_notes": {
+    "v1.0.0": {
+      "title": "🌟 Welcome to Stellr - Your Cosmic Dating Journey Begins!",
+      "notes": "Introducing Stellr - the astrology-based dating app that connects hearts through the stars!\n\n✨ Launch Features:\n🔮 Astrological compatibility matching system\n📸 Advanced photo verification for authentic profiles\n🌙 Daily horoscopes and cosmic insights\n💬 Secure, encrypted messaging platform\n🎯 Intelligent matching algorithm\n⭐ Premium subscription with exclusive features\n\nStart your cosmic love journey today and find your written-in-the-stars match! 🌟"
+    }
+  }
+}

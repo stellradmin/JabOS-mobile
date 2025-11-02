@@ -1,0 +1,353 @@
+# =====================================================================
+# SNYK SECURITY POLICY FOR STELLR DATING APP
+# =====================================================================
+# Comprehensive vulnerability management and policy configuration
+# Zero tolerance for high-severity vulnerabilities
+
+version: v1.25.0
+
+# =====================================================================
+# VULNERABILITY PATCHES AND IGNORES
+# =====================================================================
+
+# Patch vulnerabilities that have available fixes
+patch:
+  'SNYK-JS-AXIOS-6124857':
+    - '*':
+        patched: '2025-01-15T00:00:00.000Z'
+        reason: 'Axios SSRF vulnerability - patched to latest version'
+  
+  'SNYK-JS-LODASH-567746':
+    - '*':
+        patched: '2025-01-15T00:00:00.000Z'
+        reason: 'Lodash prototype pollution - upgraded to secure version'
+
+# Temporary ignores with expiration dates (use sparingly)
+ignore:
+  # Example of temporary ignore for dev dependencies
+  'SNYK-JS-JSDOM-5593145':
+    - '*':
+        reason: 'jsdom vulnerability in test dependencies only'
+        expires: '2025-02-15T00:00:00.000Z'
+        created: '2025-01-15T00:00:00.000Z'
+
+# =====================================================================
+# SECURITY POLICIES BY SEVERITY
+# =====================================================================
+
+# Critical and High severity vulnerabilities - NEVER ignore
+critical:
+  fail_on: true
+  max_acceptable: 0
+  exclude_dev_dependencies: false
+
+high:
+  fail_on: true
+  max_acceptable: 0
+  exclude_dev_dependencies: false
+
+# Medium severity - Allow with review
+medium:
+  fail_on: false
+  max_acceptable: 5
+  exclude_dev_dependencies: true
+
+# Low severity - Monitor only
+low:
+  fail_on: false
+  max_acceptable: 20
+  exclude_dev_dependencies: true
+
+# =====================================================================
+# PACKAGE-SPECIFIC SECURITY RULES
+# =====================================================================
+
+package_rules:
+  # Authentication and crypto packages - strictest rules
+  - name: "Authentication Packages"
+    packages:
+      - "jsonwebtoken"
+      - "bcrypt"
+      - "crypto-js"
+      - "node-forge"
+      - "uuid"
+      - "jose"
+    rules:
+      critical_max: 0
+      high_max: 0
+      medium_max: 0
+      auto_fix: true
+      
+  # Network and HTTP packages
+  - name: "Network Packages"
+    packages:
+      - "axios"
+      - "node-fetch"
+      - "request"
+      - "got"
+      - "superagent"
+    rules:
+      critical_max: 0
+      high_max: 0
+      medium_max: 1
+      auto_fix: true
+      
+  # React Native and mobile-specific packages
+  - name: "React Native Packages"
+    packages:
+      - "react-native"
+      - "expo"
+      - "@react-native-async-storage/async-storage"
+      - "expo-secure-store"
+      - "react-native-keychain"
+    rules:
+      critical_max: 0
+      high_max: 0
+      medium_max: 2
+      auto_fix: true
+      
+  # Database and Supabase packages
+  - name: "Database Packages"
+    packages:
+      - "@supabase/supabase-js"
+      - "pg"
+      - "postgres"
+      - "postgrest-js"
+    rules:
+      critical_max: 0
+      high_max: 0
+      medium_max: 1
+      auto_fix: true
+      
+  # Payment processing packages
+  - name: "Payment Packages"
+    packages:
+      - "@stripe/stripe-js"
+      - "@stripe/stripe-react-native"
+      - "stripe"
+    rules:
+      critical_max: 0
+      high_max: 0
+      medium_max: 0
+      auto_fix: true
+
+# =====================================================================
+# LICENSE POLICIES
+# =====================================================================
+
+license:
+  # Allowed licenses for production use
+  allowed:
+    - "MIT"
+    - "Apache-2.0"
+    - "BSD-3-Clause"
+    - "BSD-2-Clause"
+    - "ISC"
+    - "0BSD"
+    - "CC0-1.0"
+    - "Unlicense"
+    
+  # Licenses that require review
+  review_required:
+    - "GPL-2.0"
+    - "GPL-3.0"
+    - "LGPL-2.1"
+    - "LGPL-3.0"
+    - "AGPL-3.0"
+    - "EPL-1.0"
+    - "EPL-2.0"
+    
+  # Prohibited licenses
+  prohibited:
+    - "WTFPL"
+    - "NLPL"
+    - "JSON" # Problematic license
+    - "Facebook BSD+Patents" # Deprecated
+
+# =====================================================================
+# MONITORING AND ALERTING
+# =====================================================================
+
+monitoring:
+  # Check for new vulnerabilities daily
+  schedule: "daily"
+  
+  # Alert thresholds
+  alerts:
+    critical:
+      enabled: true
+      notification_channels: ["email", "slack"]
+      immediate: true
+    high:
+      enabled: true
+      notification_channels: ["email", "slack"]
+      immediate: true
+    medium:
+      enabled: true
+      notification_channels: ["slack"]
+      immediate: false
+      
+  # Automated actions
+  auto_actions:
+    critical:
+      create_pr: true
+      block_ci: true
+      notify_security_team: true
+    high:
+      create_pr: true
+      block_ci: true
+      notify_security_team: true
+    medium:
+      create_issue: true
+      block_ci: false
+      
+# =====================================================================
+# INTEGRATION SETTINGS
+# =====================================================================
+
+integrations:
+  # GitHub integration
+  github:
+    enabled: true
+    fail_on_vulnerabilities: true
+    create_pull_requests: true
+    dependency_upgrade_strategy: "auto"
+    
+  # CI/CD integration
+  ci:
+    fail_build_on_issues: true
+    generate_reports: true
+    upload_results: true
+    
+  # IDE integration
+  ide:
+    show_vulnerabilities: true
+    show_licenses: true
+    real_time_scanning: true
+
+# =====================================================================
+# CUSTOM SECURITY RULES
+# =====================================================================
+
+custom_rules:
+  # Stellr-specific security requirements
+  - name: "No AsyncStorage for Sensitive Data"
+    description: "Prevent storing tokens/passwords in AsyncStorage"
+    pattern: "AsyncStorage\\.(setItem|multiSet).*(?:token|password|secret|key|auth)"
+    severity: "high"
+    
+  - name: "Require HTTPS URLs"
+    description: "All HTTP URLs must use HTTPS"
+    pattern: "http://(?!localhost|127\\.0\\.0\\.1)"
+    severity: "medium"
+    
+  - name: "No Hardcoded Secrets"
+    description: "Detect hardcoded API keys and secrets"
+    pattern: "(?:sk_|pk_|rk_|whsec_|eyJ[A-Za-z0-9_/+-]*\\.)"
+    severity: "critical"
+    
+  - name: "Service Role Key Usage"
+    description: "Service role keys should not be in client code"
+    pattern: "service[_-]?role|SUPABASE_SERVICE_ROLE"
+    severity: "critical"
+
+# =====================================================================
+# REPORTING AND DOCUMENTATION
+# =====================================================================
+
+reporting:
+  # Report formats to generate
+  formats:
+    - "json"
+    - "html"
+    - "pdf"
+    - "sarif"
+    
+  # Report content
+  include:
+    - "vulnerabilities"
+    - "licenses"
+    - "policy_violations"
+    - "remediation_advice"
+    - "dependency_tree"
+    
+  # Report delivery
+  delivery:
+    email:
+      enabled: true
+      recipients: ["security@stellr.app", "dev-team@stellr.app"]
+      frequency: "weekly"
+    slack:
+      enabled: true
+      channel: "#security-alerts"
+      frequency: "immediate"
+      
+# =====================================================================
+# COMPLIANCE FRAMEWORKS
+# =====================================================================
+
+compliance:
+  # SOC 2 compliance requirements
+  soc2:
+    enabled: true
+    requirements:
+      - "vulnerability_management"
+      - "incident_response"
+      - "change_management"
+      
+  # PCI DSS for payment processing
+  pci_dss:
+    enabled: true
+    requirements:
+      - "secure_development"
+      - "vulnerability_scanning"
+      - "penetration_testing"
+      
+  # GDPR for data protection
+  gdpr:
+    enabled: true
+    requirements:
+      - "data_protection"
+      - "privacy_by_design"
+      - "security_measures"
+
+# =====================================================================
+# EMERGENCY PROCEDURES
+# =====================================================================
+
+emergency:
+  # Critical vulnerability response
+  critical_response:
+    max_response_time: "2 hours"
+    escalation_contacts:
+      - "security-lead@stellr.app"
+      - "cto@stellr.app"
+    automated_actions:
+      - "block_deployments"
+      - "create_incident"
+      - "notify_stakeholders"
+      
+  # Incident management
+  incident_management:
+    tracking_system: "jira"
+    communication_channel: "#security-incidents"
+    post_mortem_required: true
+    
+# =====================================================================
+# METADATA
+# =====================================================================
+
+metadata:
+  policy_version: "1.0.0"
+  created_date: "2025-01-15"
+  last_updated: "2025-01-15"
+  owner: "Stellr Security Team"
+  approver: "CTO"
+  next_review_date: "2025-04-15"
+  compliance_frameworks:
+    - "SOC 2 Type II"
+    - "PCI DSS Level 1"
+    - "GDPR"
+  contact:
+    security_team: "security@stellr.app"
+    emergency: "+1-555-SEC-RITY"

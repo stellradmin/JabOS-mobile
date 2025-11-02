@@ -1,0 +1,401 @@
+# =====================================================================
+# STELLR BUNDLE SIZE MONITORING
+# =====================================================================
+# Monitors bundle size, detects regressions, and ensures performance budgets
+
+name: 📦 Bundle Analysis
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+  # Bundle size budgets (in bytes)
+  JS_BUDGET_IOS: 1258291  # 1.2MB gzipped
+  JS_BUDGET_ANDROID: 1258291  # 1.2MB gzipped
+  ASSET_BUDGET: 5242880  # 5MB for assets
+  
+jobs:
+  # =====================================================================
+  # BUNDLE SIZE ANALYSIS
+  # =====================================================================
+  bundle-analysis:
+    name: 📦 Bundle Size Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for comparison
+          
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 🔒 Install Dependencies
+        run: npm ci --legacy-peer-deps
+        
+      - name: 📦 Build Production Bundle
+        run: |
+          echo "📦 Building production bundle for analysis..."
+          
+          # Clear any existing builds
+          rm -rf .expo-dist
+          
+          # Build for iOS
+          echo "🍎 Building iOS bundle..."
+          EXPO_NO_TELEMETRY=1 npx expo export --platform ios --output-dir .expo-dist/ios
+          
+          # Build for Android
+          echo "🤖 Building Android bundle..."
+          EXPO_NO_TELEMETRY=1 npx expo export --platform android --output-dir .expo-dist/android
+          
+      - name: 📊 Analyze Bundle Size
+        run: |
+          echo "📊 Analyzing bundle sizes..."
+          
+          # Install analysis tools
+          npm install -g source-map-explorer @bundle-stats/cli
+          
+          # Create analysis directory
+          mkdir -p .artifacts/bundle-analysis
+          
+          # Function to analyze platform bundle
+          analyze_platform() {
+            local platform=$1
+            local budget=$2
+            
+            echo "Analyzing $platform bundle..."
+            
+            if [ -d ".expo-dist/$platform" ]; then
+              # Find JS bundles
+              js_files=$(find ".expo-dist/$platform" -name "*.js" | head -10)
+              map_files=$(find ".expo-dist/$platform" -name "*.map" | head -10)
+              
+              if [ -n "$js_files" ] && [ -n "$map_files" ]; then
+                # Generate source map analysis
+                echo "Generating source map analysis for $platform..."
+                npx source-map-explorer $js_files $map_files --html ".artifacts/bundle-analysis/$platform-bundle-report.html" --json ".artifacts/bundle-analysis/$platform-bundle-stats.json" || true
+                
+                # Calculate total JS size
+                total_js_size=0
+                for file in $js_files; do
+                  if [ -f "$file" ]; then
+                    size=$(wc -c < "$file")
+                    total_js_size=$((total_js_size + size))
+                  fi
+                done
+                
+                # Calculate gzipped size
+                gzipped_size=0
+                for file in $js_files; do
+                  if [ -f "$file" ]; then
+                    gz_size=$(gzip -c "$file" | wc -c)
+                    gzipped_size=$((gzipped_size + gz_size))
+                  fi
+                done
+                
+                echo "$platform Bundle Analysis:" >> ".artifacts/bundle-analysis/$platform-summary.txt"
+                echo "  Raw JS Size: $total_js_size bytes" >> ".artifacts/bundle-analysis/$platform-summary.txt"
+                echo "  Gzipped Size: $gzipped_size bytes" >> ".artifacts/bundle-analysis/$platform-summary.txt"
+                echo "  Budget: $budget bytes" >> ".artifacts/bundle-analysis/$platform-summary.txt"
+                
+                # Check budget
+                if [ $gzipped_size -gt $budget ]; then
+                  echo "  Status: ❌ OVER BUDGET" >> ".artifacts/bundle-analysis/$platform-summary.txt"
+                  echo "::error::$platform bundle size ($gzipped_size bytes) exceeds budget ($budget bytes)"
+                  return 1
+                else
+                  echo "  Status: ✅ Within Budget" >> ".artifacts/bundle-analysis/$platform-summary.txt"
+                  echo "::notice::$platform bundle size ($gzipped_size bytes) is within budget ($budget bytes)"
+                fi
+                
+                # Export for GitHub output
+                echo "${platform}_BUNDLE_SIZE=$gzipped_size" >> $GITHUB_ENV
+                echo "${platform}_BUDGET_STATUS=$([ $gzipped_size -le $budget ] && echo "PASS" || echo "FAIL")" >> $GITHUB_ENV
+              else
+                echo "::warning::No JS or map files found for $platform"
+              fi
+            else
+              echo "::warning::No build output found for $platform"
+            fi
+          }
+          
+          # Analyze both platforms
+          analyze_platform "ios" $JS_BUDGET_IOS
+          ios_status=$?
+          
+          analyze_platform "android" $JS_BUDGET_ANDROID
+          android_status=$?
+          
+          # Exit with error if any platform failed
+          if [ $ios_status -ne 0 ] || [ $android_status -ne 0 ]; then
+            exit 1
+          fi
+          
+      - name: 📊 Generate Bundle Stats
+        run: |
+          echo "📊 Generating comprehensive bundle statistics..."
+          
+          # Create bundle stats if tool is available
+          if command -v bundle-stats &> /dev/null; then
+            npx @bundle-stats/cli .expo-dist --out-dir .artifacts/bundle-stats || echo "Bundle stats generation failed"
+          fi
+          
+          # Create size summary
+          cat > .artifacts/bundle-analysis/size-summary.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "ios": {
+              "size": "${iOS_BUNDLE_SIZE:-0}",
+              "budget": "$JS_BUDGET_IOS",
+              "status": "${iOS_BUDGET_STATUS:-UNKNOWN}"
+            },
+            "android": {
+              "size": "${ANDROID_BUNDLE_SIZE:-0}",
+              "budget": "$JS_BUDGET_ANDROID", 
+              "status": "${ANDROID_BUDGET_STATUS:-UNKNOWN}"
+            }
+          }
+          EOF
+          
+      - name: 📤 Upload Bundle Analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis
+          path: .artifacts/
+          retention-days: 30
+          
+      - name: 💬 PR Comment with Bundle Info
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = '## 📦 Bundle Size Analysis\n\n';
+            
+            // Read iOS summary if exists
+            try {
+              const iosSummary = fs.readFileSync('.artifacts/bundle-analysis/ios-summary.txt', 'utf8');
+              comment += '### 🍎 iOS Bundle\n```\n' + iosSummary + '\n```\n\n';
+            } catch (e) {
+              comment += '### 🍎 iOS Bundle\n❌ Analysis failed\n\n';
+            }
+            
+            // Read Android summary if exists
+            try {
+              const androidSummary = fs.readFileSync('.artifacts/bundle-analysis/android-summary.txt', 'utf8');
+              comment += '### 🤖 Android Bundle\n```\n' + androidSummary + '\n```\n\n';
+            } catch (e) {
+              comment += '### 🤖 Android Bundle\n❌ Analysis failed\n\n';
+            }
+            
+            comment += '### 📊 Bundle Reports\n';
+            comment += '- iOS Bundle Report: Check artifacts for detailed analysis\n';
+            comment += '- Android Bundle Report: Check artifacts for detailed analysis\n\n';
+            comment += '> 💡 **Tip**: Keep bundles under 1.2MB gzipped for optimal performance\n';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # =====================================================================
+  # BUNDLE SIZE REGRESSION CHECK
+  # =====================================================================
+  regression-check:
+    name: 📈 Regression Check
+    runs-on: ubuntu-latest
+    needs: bundle-analysis
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comparison
+          
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 🔒 Install Dependencies
+        run: npm ci --legacy-peer-deps
+        
+      - name: 📊 Download Current Analysis
+        uses: actions/download-artifact@v4
+        with:
+          name: bundle-analysis
+          path: .artifacts/current/
+          
+      - name: 📊 Compare with Base Branch
+        run: |
+          echo "📊 Comparing bundle sizes with base branch..."
+          
+          # Checkout base branch
+          git checkout ${{ github.base_ref }}
+          
+          # Build base bundle
+          rm -rf .expo-dist
+          EXPO_NO_TELEMETRY=1 npx expo export --platform ios --output-dir .expo-dist/ios || echo "Base build failed"
+          
+          # Calculate base size
+          if [ -d ".expo-dist/ios" ]; then
+            js_files=$(find ".expo-dist/ios" -name "*.js")
+            base_size=0
+            for file in $js_files; do
+              if [ -f "$file" ]; then
+                gz_size=$(gzip -c "$file" | wc -c)
+                base_size=$((base_size + gz_size))
+              fi
+            done
+            
+            echo "BASE_BUNDLE_SIZE=$base_size" >> $GITHUB_ENV
+          else
+            echo "BASE_BUNDLE_SIZE=0" >> $GITHUB_ENV
+          fi
+          
+          # Switch back to PR branch
+          git checkout ${{ github.head_ref }}
+          
+      - name: 📈 Calculate Regression
+        run: |
+          echo "📈 Calculating bundle size regression..."
+          
+          base_size=${BASE_BUNDLE_SIZE:-0}
+          current_size=${IOS_BUNDLE_SIZE:-0}
+          
+          if [ $base_size -gt 0 ] && [ $current_size -gt 0 ]; then
+            diff=$((current_size - base_size))
+            percent_change=$((diff * 100 / base_size))
+            
+            echo "Bundle Size Comparison:"
+            echo "  Base: $base_size bytes"
+            echo "  Current: $current_size bytes"
+            echo "  Difference: $diff bytes"
+            echo "  Percent Change: $percent_change%"
+            
+            # Check for significant regression (>5% increase)
+            if [ $percent_change -gt 5 ]; then
+              echo "::error::Significant bundle size regression detected (+$percent_change%)"
+              echo "::error::Bundle size increased by $diff bytes"
+              exit 1
+            elif [ $percent_change -gt 2 ]; then
+              echo "::warning::Bundle size increased by $percent_change%"
+            elif [ $percent_change -lt -2 ]; then
+              echo "::notice::Bundle size decreased by ${percent_change#-}% 🎉"
+            else
+              echo "::notice::Bundle size change is within acceptable range"
+            fi
+          else
+            echo "::warning::Unable to compare bundle sizes"
+          fi
+
+  # =====================================================================
+  # PERFORMANCE BUDGETS
+  # =====================================================================
+  performance-budgets:
+    name: 🎯 Performance Budgets
+    runs-on: ubuntu-latest
+    needs: bundle-analysis
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📊 Download Bundle Analysis
+        uses: actions/download-artifact@v4
+        with:
+          name: bundle-analysis
+          path: .artifacts/
+          
+      - name: 🎯 Validate Performance Budgets
+        run: |
+          echo "🎯 Validating performance budgets..."
+          
+          # Read bundle sizes
+          ios_size=${iOS_BUNDLE_SIZE:-0}
+          android_size=${ANDROID_BUNDLE_SIZE:-0}
+          
+          # Performance budget validation
+          echo "Performance Budget Validation:"
+          echo "================================="
+          
+          # JavaScript budgets
+          echo "📱 JavaScript Bundles:"
+          echo "  iOS: $ios_size bytes (Budget: $JS_BUDGET_IOS bytes)"
+          echo "  Android: $android_size bytes (Budget: $JS_BUDGET_ANDROID bytes)"
+          
+          # Asset budget check (if build artifacts exist)
+          if [ -d ".expo-dist" ]; then
+            asset_size=$(find .expo-dist -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.svg" -o -name "*.gif" \) -exec wc -c {} + | tail -1 | awk '{print $1}')
+            echo "  Assets: ${asset_size:-0} bytes (Budget: $ASSET_BUDGET bytes)"
+            
+            if [ "${asset_size:-0}" -gt $ASSET_BUDGET ]; then
+              echo "::error::Asset budget exceeded"
+              exit 1
+            fi
+          fi
+          
+          # Overall budget status
+          if [ "${iOS_BUDGET_STATUS:-FAIL}" = "PASS" ] && [ "${ANDROID_BUDGET_STATUS:-FAIL}" = "PASS" ]; then
+            echo "✅ All performance budgets met"
+          else
+            echo "❌ Performance budget violations detected"
+            exit 1
+          fi
+          
+      - name: 📋 Generate Performance Report
+        run: |
+          echo "📋 Generating performance budget report..."
+          
+          cat > performance-budget-report.md << EOF
+          # 🎯 Performance Budget Report
+          
+          ## 📊 Bundle Sizes
+          
+          | Platform | Current Size | Budget | Status |
+          |----------|-------------|--------|---------|
+          | iOS | ${iOS_BUNDLE_SIZE:-0} bytes | $JS_BUDGET_IOS bytes | ${iOS_BUDGET_STATUS:-UNKNOWN} |
+          | Android | ${ANDROID_BUNDLE_SIZE:-0} bytes | $JS_BUDGET_ANDROID bytes | ${ANDROID_BUDGET_STATUS:-UNKNOWN} |
+          
+          ## 🎯 Performance Guidelines
+          
+          - **JavaScript Bundle**: Keep under 1.2MB gzipped
+          - **Assets**: Keep under 5MB total
+          - **Images**: Use WebP format when possible
+          - **Fonts**: Subset fonts to required characters
+          - **Dependencies**: Regularly audit and remove unused packages
+          
+          ## 📈 Optimization Tips
+          
+          1. Use dynamic imports for non-critical code
+          2. Implement code splitting by route
+          3. Optimize images and use appropriate formats
+          4. Remove console.log statements in production
+          5. Use tree-shaking to eliminate dead code
+          EOF
+          
+      - name: 📤 Upload Performance Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-budget-report
+          path: performance-budget-report.md
+          retention-days: 30
